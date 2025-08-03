@@ -174,6 +174,6 @@ func GetPaperDetails(c *gin.Context) {
         "journal_conference": paper.JournalConference,
         "keywords":          paper.Keywords,
         "citation_count":    count,
-        "views":             paper.Views, // actual synced value comes from Redis batch
+        "views":             paper.Views, 
     })
 }

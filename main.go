@@ -5,18 +5,21 @@ import (
 	"log"
 
 	"DB_HW5/routes"
+	"DB_HW5/scheduler"
 
-	"github.com/gin-gonic/gin"
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/redis"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
 	config.InitDB()
 
+	scheduler.StartViewSyncScheduler()
+
 	r := gin.Default()
 
-	store, err := redis.NewStore(10, "tcp", "localhost:6379", "default","123456",[]byte("secret-key"))
+	store, err := redis.NewStore(10, "tcp", "localhost:6379", "default", "123456", []byte("This is a REAL-SECRET-KEY"))
 	if err != nil {
 		log.Fatal("Session store error:", err)
 	}

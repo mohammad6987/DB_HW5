@@ -3,9 +3,11 @@ module DB_HW5
 go 1.23.0
 
 require (
+	github.com/brianvoe/gofakeit/v6 v6.28.0
 	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/gin v1.10.1
 	github.com/go-redis/redis/v8 v8.11.5
+	github.com/robfig/cron/v3 v3.0.1
 	go.mongodb.org/mongo-driver v1.17.4
 	golang.org/x/crypto v0.37.0
 )
