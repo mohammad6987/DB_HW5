@@ -2,63 +2,46 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"strings"
 	"time"
 
-	"github.com/robfig/cron/v3"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"DB_HW5/config"
+	"DB_HW5/utils"
 )
 
-func StartViewSyncScheduler() {
-	c := cron.New()
-	c.AddFunc("@every 10m", SyncViews)
-	c.Start()
-	fmt.Println("View sync scheduler started (every 10 minutes)")
+func StartViewsSync() {
+
+	ticker := time.NewTicker(10 * time.Minute)
+	go func() {
+		for range ticker.C {
+			if err := syncOnce(); err != nil {
+				log.Printf("views sync error: %v", err)
+			}
+		}
+	}()
 }
 
-func SyncViews() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func syncOnce() error {
+	ctx := context.Background()
+	iter := config.Redis.Scan(ctx, 0, "paper_views:*", 1000).Iterator()
+	for iter.Next(ctx) {
+		key := iter.Val() 
+		idHex := strings.TrimPrefix(key, "paper_views:")
+		count, err := config.Redis.Get(ctx, key).Int64()
+		if err != nil && err != redis.Nil { continue }
+		if count <= 0 { continue }
 
-	keys, err := config.RedisClient.Keys(ctx, "paper_views:*").Result()
-	if err != nil {
-		fmt.Println("Failed to list Redis keys:", err)
-		return
+		oid, err := primitive.ObjectIDFromHex(idHex)
+		if err != nil { continue }
+		// update Mongo
+		_, _ = utils.Papers().UpdateByID(ctx, oid, bson.M{"$inc": bson.M{"views": count}})
+		// reset to 0
+		_ = config.Redis.Set(ctx, key, 0, 0).Err()
 	}
-
-	for _, key := range keys {
-		paperID := strings.TrimPrefix(key, "paper_views:")
-		objID, err := primitive.ObjectIDFromHex(paperID)
-		if err != nil {
-			fmt.Printf("Skipping invalid ObjectID: %s\n", paperID)
-			continue
-		}
-
-		views, err := config.RedisClient.Get(ctx, key).Int()
-		if err != nil {
-			fmt.Printf("Failed to get view count for %s: %v\n", key, err)
-			continue
-		}
-
-		if views == 0 {
-			continue
-		}
-
-		_, err = config.MongoDB.Collection("papers").UpdateOne(
-			ctx,
-			bson.M{"_id": objID},
-			bson.M{"$inc": bson.M{"views": views}},
-		)
-		if err != nil {
-			fmt.Printf("MongoDB update failed for %s: %v\n", key, err)
-			continue
-		}
-
-		config.RedisClient.Set(ctx, key, 0, 0)
-		fmt.Printf("✅ Synced %d views for paper %s\n", views, paperID)
-	}
+	return iter.Err()
 }

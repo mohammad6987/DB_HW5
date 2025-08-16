@@ -1,31 +1,29 @@
 package main
 
 import (
-	"DB_HW5/config"
 	"log"
+	"os"
 
+	"DB_HW5/config"
 	"DB_HW5/routes"
 	"DB_HW5/scheduler"
-
-	"github.com/gin-contrib/sessions"
-	"github.com/gin-contrib/sessions/redis"
-	"github.com/gin-gonic/gin"
+	"DB_HW5/utils"
 )
 
 func main() {
-	config.InitDB()
+	config.Init()
+	utils.EnsureIndexes()
+	scheduler.StartViewsSync()
 
-	scheduler.StartViewSyncScheduler()
-
-	r := gin.Default()
-
-	store, err := redis.NewStore(10, "tcp", "localhost:6379", "default", "123456", []byte("This is a REAL-SECRET-KEY"))
-	if err != nil {
-		log.Fatal("Session store error:", err)
+	r := routes.SetupRouter()
+	addr := getEnv("HTTP_ADDR", ":8080")
+	log.Printf("listening on %s", addr)
+	if err := r.Run(addr); err != nil {
+		panic(err)
 	}
-	r.Use(sessions.Sessions("mysession", store))
+}
 
-	routes.SetupRoutes(r)
-
-	r.Run(":8080") // App listens on http://localhost:8080
+func getEnv(k, def string) string {
+	if v := os.Getenv(k); v != "" { return v }
+	return def
 }

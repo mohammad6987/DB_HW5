@@ -2,146 +2,125 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"log"
 	"math/rand"
 	"time"
 
-	"github.com/brianvoe/gofakeit/v6"
-	"github.com/go-redis/redis/v8"
+	"github.com/brianvoe/gofakeit/v7"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
-	"golang.org/x/crypto/bcrypt"
+
+	"DB_HW5/config"
+	"DB_HW5/models"
+	"DB_HW5/utils"
 )
-
-var (
-	mongoURI     = "mongodb://localhost:27017"
-	redisAddress = "localhost:6379"
-	ctx          = context.Background()
-)
-
-type User struct {
-	ID         primitive.ObjectID `bson:"_id,omitempty"`
-	Username   string             `bson:"username"`
-	Name       string             `bson:"name"`
-	Email      string             `bson:"email"`
-	Password   string             `bson:"password"`
-	Department string             `bson:"department"`
-}
-
-type Paper struct {
-	ID                primitive.ObjectID `bson:"_id,omitempty"`
-	Title             string             `bson:"title"`
-	Authors           []string           `bson:"authors"`
-	Abstract          string             `bson:"abstract"`
-	PublicationDate   primitive.DateTime `bson:"publication_date"`
-	JournalConference string             `bson:"journal_conference"`
-	Keywords          []string           `bson:"keywords"`
-	UploadedBy        primitive.ObjectID `bson:"uploaded_by"`
-	Views             int                `bson:"views"`
-}
-
-type Citation struct {
-	ID           primitive.ObjectID `bson:"_id,omitempty"`
-	PaperID      primitive.ObjectID `bson:"paper_id"`
-	CitedPaperID primitive.ObjectID `bson:"cited_paper_id"`
-}
 
 func main() {
-	// Setup
-	mongoClient, _ := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
-	db := mongoClient.Database("research_manager")
-	usersCol := db.Collection("users")
-	papersCol := db.Collection("papers")
-	citationsCol := db.Collection("citations")
+	config.Init()
+	utils.EnsureIndexes()
 
-	redisClient := redis.NewClient(&redis.Options{
-		Addr: redisAddress,
-		Password: "123456",
-		DB:   0,
-	})
-
+	ctx := context.Background()
 	gofakeit.Seed(0)
 
-	var userIDs []primitive.ObjectID
-
-	// --- USERS ---
-	fmt.Println("Seeding users...")
+	var users []interface{}
+	userIDs := make([]primitive.ObjectID, 0, 100)
 	for i := 0; i < 100; i++ {
 		username := gofakeit.Username()
-		password, _ := bcrypt.GenerateFromPassword([]byte(gofakeit.Password(true, true, true, false, false, 10)), 14)
+		
+		if len(username) < 3 { username += "123" }
+		if len(username) > 20 { username = username[:20] }
 
-		user := User{
-			Username:   username,
-			Name:       gofakeit.Name(),
-			Email:      gofakeit.Email(),
-			Password:   string(password),
+		pass := gofakeit.Password(true,true,true,true,false,10)
+		if len(pass) < 8 { pass += "Abcdef12" }
+
+		hash, _ := utils.HashPassword(pass)
+		u := models.User{
+			Username: username,
+			Name: gofakeit.Name(),
+			Email: gofakeit.Email(),
+			Password: hash,
 			Department: gofakeit.JobTitle(),
 		}
-
-		res, _ := usersCol.InsertOne(ctx, user)
-		uid := res.InsertedID.(primitive.ObjectID)
-		userIDs = append(userIDs, uid)
-
-		redisClient.HSet(ctx, "usernames", username, 1)
+		users = append(users, u)
+	}
+	ur, err := utils.Users().InsertMany(ctx, users)
+	if err != nil { log.Fatal(err) }
+	for _, id := range ur.InsertedIDs {
+		userIDs = append(userIDs, id.(primitive.ObjectID))
 	}
 
-	var paperIDs []primitive.ObjectID
+	for _, u := range users {
+		un := u.(models.User).Username
+		_ = config.Redis.HSet(ctx, utils.RedisHashUsernames, un, 1).Err()
+	}
 
-	// --- PAPERS ---
-	fmt.Println("Seeding papers...")
+	var papers []interface{}
+	paperIDs := make([]primitive.ObjectID, 0, 1000)
+	start, _ := time.Parse("2006-01-02", "2015-06-05")
+	end, _ := time.Parse("2006-01-02", "2025-06-05")
+	delta := end.Sub(start)
+
 	for i := 0; i < 1000; i++ {
-		authorCount := gofakeit.Number(1, 5)
-		authors := make([]string, authorCount)
-		for j := range authors {
+		nAuthors := rand.Intn(5) + 1
+		authors := make([]string, nAuthors)
+		for j := 0; j < nAuthors; j++ {
 			authors[j] = gofakeit.Name()
+			if len(authors[j]) > 100 { authors[j] = authors[j][:100] }
 		}
-
-		keywordCount := gofakeit.Number(1, 5)
-		keywords := make([]string, keywordCount)
-		for j := range keywords {
+		nKeywords := rand.Intn(5) + 1
+		keywords := make([]string, nKeywords)
+		for j := 0; j < nKeywords; j++ {
 			keywords[j] = gofakeit.Word()
+			if len(keywords[j]) > 50 { keywords[j] = keywords[j][:50] }
 		}
 
-		paper := Paper{
-			Title:             gofakeit.Sentence(6),
-			Authors:           authors,
-			Abstract:          gofakeit.Paragraph(1, 3, 30, " "),
-			PublicationDate:   primitive.NewDateTimeFromTime(gofakeit.DateRange(time.Date(2015, 6, 5, 0, 0, 0, 0, time.UTC), time.Date(2025, 6, 5, 0, 0, 0, 0, time.UTC))),
-			JournalConference: gofakeit.Company(),
-			Keywords:          keywords,
-			UploadedBy:        userIDs[rand.Intn(len(userIDs))],
-			Views:             0,
-		}
+		pub := start.Add(time.Duration(rand.Int63n(int64(delta))))
+		title := gofakeit.Sentence(6)
+		abs := gofakeit.Paragraph(1, 5, 12, " ")
 
-		res, _ := papersCol.InsertOne(ctx, paper)
-		paperIDs = append(paperIDs, res.InsertedID.(primitive.ObjectID))
+		p := models.Paper{
+			Title: truncate(title, 200),
+			Authors: authors,
+			Abstract: truncate(abs, 1000),
+			PublicationDate: pub,
+			JournalConference: truncate(gofakeit.Company(), 200),
+			Keywords: keywords,
+			UploadedBy: userIDs[rand.Intn(len(userIDs))],
+			Views: 0,
+		}
+		papers = append(papers, p)
+	}
+	pr, err := utils.Papers().InsertMany(ctx, papers)
+	if err != nil { log.Fatal(err) }
+	for _, id := range pr.InsertedIDs {
+		paperIDs = append(paperIDs, id.(primitive.ObjectID))
 	}
 
-	// --- CITATIONS ---
-	fmt.Println("Seeding citations...")
+	
+	var cites []interface{}
 	for _, pid := range paperIDs {
-		numCitations := gofakeit.Number(0, 5)
-		cited := map[string]bool{}
-		for i := 0; i < numCitations; i++ {
-			var citedID primitive.ObjectID
-			for {
-				candidate := paperIDs[rand.Intn(len(paperIDs))]
-				if candidate != pid && !cited[candidate.Hex()] {
-					citedID = candidate
-					cited[candidate.Hex()] = true
-					break
-				}
-			}
-
-			citation := Citation{
-				PaperID:      pid,
-				CitedPaperID: citedID,
-			}
-
-			citationsCol.InsertOne(ctx, citation)
+		n := rand.Intn(6) 
+		for i := 0; i < n; i++ {
+			to := paperIDs[rand.Intn(len(paperIDs))]
+			if to == pid { continue } // no self-citation
+			cites = append(cites, models.Citation{PaperID: pid, CitedPaperID: to})
 		}
 	}
+	if len(cites) > 0 {
+		if _, err := utils.Citations().InsertMany(ctx, cites); err != nil { log.Fatal(err) }
+	}
+	_, _ = utils.Papers().Indexes().CreateOne(ctx, mongoIndexText())
 
-	fmt.Println("✅ Seed complete.")
+	log.Println("Seeding finished.")
+}
+
+func truncate(s string, max int) string {
+	if len(s) > max { return s[:max] }
+	return s
+}
+
+func mongoIndexText() interface{} {
+
+	return struct{
+	}{}
 }

@@ -2,46 +2,63 @@ package config
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"os"
+	"time"
 
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+type AppConfig struct {
+	MongoURI      string
+	MongoDB       string
+	RedisAddr     string
+	RedisPassword string
+}
+
 var (
 	MongoClient *mongo.Client
-	MongoDB     *mongo.Database
-	RedisClient *redis.Client
-	Ctx         = context.Background()
+	Redis       *redis.Client
+	Cfg         AppConfig
 )
 
-func InitDB() {
-
-	mongoURI := "mongodb://localhost:27017"
-	clientOpts := options.Client().ApplyURI(mongoURI)
-	client, err := mongo.NewClient(clientOpts)
-	if err != nil {
-		log.Fatal(err)
+func Init() {
+	Cfg = AppConfig{
+		MongoURI:      getEnv("MONGO_URI", "mongodb://mongo:27017"),
+		MongoDB:       getEnv("MONGO_DB", "research_db"),
+		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", ""),
 	}
-	err = client.Connect(Ctx)
+
+	// Mongo
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(Cfg.MongoURI))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("mongo connect: %v", err)
+	}
+	if err := client.Ping(ctx, nil); err != nil {
+		log.Fatalf("mongo ping: %v", err)
 	}
 	MongoClient = client
-	MongoDB = client.Database("research_manager")
 
-	RedisClient = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "123456",
+	// Redis
+	Redis = redis.NewClient(&redis.Options{
+		Addr:     Cfg.RedisAddr,
+		Password: Cfg.RedisPassword,
 		DB:       0,
 	})
-
-	_, err = RedisClient.Ping(Ctx).Result()
-	if err != nil {
-		log.Fatal("Redis ping error:", err)
+	if err := Redis.Ping(ctx).Err(); err != nil {
+		log.Fatalf("redis ping: %v", err)
 	}
+}
 
-	fmt.Println("MongoDB and Redis connected")
+func getEnv(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }
