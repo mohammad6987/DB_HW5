@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/brianvoe/gofakeit/v7"
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"DB_HW5/config"

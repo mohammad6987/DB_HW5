@@ -2,6 +2,7 @@ package models
 
 import (
     "go.mongodb.org/mongo-driver/bson/primitive"
+    "time"
 )
 
 type Paper struct {
@@ -9,7 +10,7 @@ type Paper struct {
     Title            string               `bson:"title" json:"title"`
     Authors          []string             `bson:"authors" json:"authors"`
     Abstract         string               `bson:"abstract" json:"abstract"`
-    PublicationDate  primitive.DateTime   `bson:"publication_date" json:"publication_date"`
+    PublicationDate  time.Time   `bson:"publication_date" json:"publication_date"`
     JournalConference string              `bson:"journal_conference" json:"journal_conference"`
     Keywords         []string             `bson:"keywords" json:"keywords"`
     UploadedBy       primitive.ObjectID   `bson:"uploaded_by" json:"uploaded_by"`

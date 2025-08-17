@@ -26,13 +26,13 @@ var (
 
 func Init() {
 	Cfg = AppConfig{
-		MongoURI:      getEnv("MONGO_URI", "mongodb://mongo:27017"),
+		MongoURI:      getEnv("MONGO_URI", "mongodb://localhost:27017"),
 		MongoDB:       getEnv("MONGO_DB", "research_db"),
-		RedisAddr:     getEnv("REDIS_ADDR", "redis:6379"),
-		RedisPassword: getEnv("REDIS_PASSWORD", ""),
+		RedisAddr:     getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword: getEnv("REDIS_PASSWORD", "123456"),
 	}
 
-	// Mongo
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -54,6 +54,7 @@ func Init() {
 	if err := Redis.Ping(ctx).Err(); err != nil {
 		log.Fatalf("redis ping: %v", err)
 	}
+
 }
 
 func getEnv(k, def string) string {
