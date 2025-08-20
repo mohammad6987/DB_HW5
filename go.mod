@@ -3,7 +3,7 @@ module DB_HW5
 go 1.23.0
 
 require (
-	github.com/brianvoe/gofakeit/v7 v7.3.0
+	github.com/bxcodec/faker/v4 v4.0.0-beta.3
 	github.com/gin-contrib/sessions v1.0.4
 	github.com/gin-gonic/gin v1.10.1
 	github.com/redis/go-redis/v9 v9.12.1

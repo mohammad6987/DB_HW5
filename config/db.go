@@ -45,7 +45,7 @@ func Init() {
 	}
 	MongoClient = client
 
-	// Redis
+
 	Redis = redis.NewClient(&redis.Options{
 		Addr:     Cfg.RedisAddr,
 		Password: Cfg.RedisPassword,
